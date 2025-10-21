@@ -1,0 +1,67 @@
+#!/bin/bash
+set -e
+
+DOMAIN="mywebsite.com"
+DOC_ROOT="/var/www/$DOMAIN/public_html"
+VHOST_FILE="/etc/apache2/sites-available/$DOMAIN.conf"
+SSL_CERT="/etc/ssl/certs/$DOMAIN.crt"
+SSL_KEY="/etc/ssl/private/$DOMAIN.key"
+
+# Create document root and set permissions
+sudo mkdir -p $DOC_ROOT
+sudo chown -R $USER:$USER $DOC_ROOT
+sudo chmod -R 755 /var/www
+
+# Create index.html with desired content
+echo "<!DOCTYPE html>
+<html>
+<head>
+    <title>Welcome to $DOMAIN</title>
+</head>
+<body style='font-family: Arial; text-align: center; margin-top: 100px;'>
+    <h1>Hi! I am Brundha</h1>
+</body>
+</html>" | sudo tee $DOC_ROOT/index.html > /dev/null
+
+# Enable Apache SSL module
+sudo a2enmod ssl
+
+# Generate self-signed SSL certificate (valid for 1 year)
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout $SSL_KEY -out $SSL_CERT \
+  -subj "/C=IN/ST=State/L=City/O=Organization/OU=IT Department/CN=$DOMAIN"
+
+# Create Apache virtual host config with SSL
+sudo bash -c "cat > $VHOST_FILE" << EOF
+<VirtualHost *:80>
+    ServerName $DOMAIN
+    Redirect permanent / https://$DOMAIN/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName $DOMAIN
+    DocumentRoot $DOC_ROOT
+
+    SSLEngine on
+    SSLCertificateFile $SSL_CERT
+    SSLCertificateKeyFile $SSL_KEY
+
+    <Directory $DOC_ROOT>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/$DOMAIN-error.log
+    CustomLog \${APACHE_LOG_DIR}/$DOMAIN-access.log combined
+</VirtualHost>
+EOF
+
+# Enable the new site configuration
+sudo a2ensite $DOMAIN.conf
+
+# Reload Apache to apply changes
+sudo systemctl reload apache2
+
+echo "Setup complete! Visit https://$DOMAIN to see 'Hi! I am Brundha'"
+echo "Remember to add '$DOMAIN' pointing to 127.0.0.1 in your /etc/hosts for local access."
